@@ -7,6 +7,7 @@ import io, base64, os, requests
 
 import easyocr
 import numpy as np
+import re
 
 app = FastAPI()
 
@@ -120,7 +121,33 @@ def analizar_placa_logic(img_pil):
                               max(0, x1-margin):min(img_np.shape[1], x2+margin)]
                 
                 ocr_res = reader.readtext(crop, detail=0)
-                recognized = "".join(ocr_res).replace(" ", "").upper()
+                
+                # Filtrar para quedarse solo con lo que parezca una placa
+                # Buscamos la cadena más larga que cumpla con patrones de placas (letras y números)
+                plate_candidates = [re.sub(r'[^A-Z0-9]', '', word.upper()) for word in ocr_res]
+                
+                # Patrones comunes en Colombia: AAA123, AAA12A, AA1234
+                # Si algún candidato coincide con un patrón fuerte, lo priorizamos
+                regex_patterns = [
+                    r'^[A-Z]{3}[0-9]{3}$', # Auto
+                    r'^[A-Z]{3}[0-9]{2}[A-Z]$', # Moto
+                    r'^[A-Z]{2}[0-9]{4}$' # Público antiguo
+                ]
+                
+                best_match = ""
+                for candidate in plate_candidates:
+                    if len(candidate) < 5: continue # Muy corto para ser placa
+                    
+                    # Si coincide con un patrón exacto, lo tomamos de una vez
+                    if any(re.match(pattern, candidate) for pattern in regex_patterns):
+                        best_match = candidate
+                        break
+                    
+                    # Si no hay patrón exacto, tomamos el más largo que tenga letras y números
+                    if len(candidate) > len(best_match):
+                        best_match = candidate
+
+                recognized = best_match
                 
                 if recognized:
                     plate_text = recognized
